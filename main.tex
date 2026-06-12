@@ -381,7 +381,7 @@ Given query $\mathbf{q}$ and positive $\mathbf{d}^+$, how to pick negatives from
 \section{Language Modeling}
 The ``G'' in RAG: model the probability of text to generate answers. The arc: from count-based n-grams to neural autoregressive LMs (\textit{basics}), the \textit{architectures} that realize them, their \textit{scaling} behavior, and the learning/reasoning \textit{paradigms} built on top.
 \subsection{LLM Basics}
-An LM assigns probabilities to token sequences such that proper language scores higher, e.g. $P(\text{the mouse ate the cheese})\gg P(\text{the the ate cheese mouse})$. Model these probabilities and we can generate. Probabilistic natural language modeling form a sequence of $n$ tokens $X=(x_1,\dots, x_n)$ given a vocabulary $V$, basing on the causality of languages and their context dependence (requirement):
+LM assigns probabilities to token sequences such that proper language scores higher, e.g. $P(\text{the mouse ate the cheese})\gg P(\text{the the ate cheese mouse})$. Model these probabilities and we can generate. Probabilistic natural language modeling form a sequence of $n$ tokens $X=(x_1,\dots, x_n)$ given a vocabulary $V$, basing on the causality of languages and their context dependence (requirement):
 $$
 P(X)= \prod_{i=1}^nP(x_i|x_1, \dots , x_{i-1})
 $$
@@ -408,11 +408,11 @@ Since we only approximate the true probability all models are \textit{potentiall
 
 \paragraph{Smoothing.} Reserve probability mass for unseen ngrams by treating rare events as if seen more often (\textit{add artificial counts}), while preserving $\sum_i p_i = 1$:
 \begin{itemize}
-  \item \textit{Laplace (add-1):} $P(x_i \mid x_{i-1}) = \frac{C(x_{i-1},x_i)+1}{C(x_{i-1})+|V|}$ --- add 1 to every count; over-smooths when $|V|$ is large.
+  \item \textit{Laplace (add- 1):} $P(x_i \mid x_{i-1}) = \frac{C(x_{i-1},x_i)+1}{C(x_{i-1})+|V|}$ --- add 1 to every count; over-smooths when $|V|$ is large.
   \item \textit{Add-$k$:} $P(x_i \mid x_{i-1}) = \frac{C(x_{i-1},x_i)+k}{C(x_{i-1})+k|V|}$ --- tunable $k<1$ softens the over-smoothing.
   \item \textit{Kneser-Ney:} discount each seen count by a fixed $\delta$ and back off to a lower order, 
   $$P_{KN}(x_i \mid x_{i-1}) = \frac{\max(C(x_{i-1},x_i)-\delta,\,0)}{\sum_{x\in V}C(x_{i-1},x)} + \lambda_{x_{i-1}}\,P_{KN}(x_i)$$
-  , where the lower-order term is a \textit{continuation probability} (how many distinct contexts $x_i$ follows), not the raw unigram.
+  , the lower-order term is a \textit{continuation probability} (how many distinct contexts $x_i$ follows), not the raw unigram.
 \end{itemize}
 
 \paragraph{Interpolation \& backoff.} The zero-count problem ultimately stems from contexts being too long. Rather than trusting a single ngram order, mix all orders:
@@ -700,7 +700,7 @@ How a \textit{frozen} model uses its knowledge at inference time (no parameter c
 \vspace{-0.3cm}
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.7\linewidth]{img/PathPlanningReasoning.png}
+    \includegraphics[width=0.5\linewidth]{img/PathPlanningReasoning.png}
     \caption{Single-Path Planning vs. Mutli-Path Planning}
     \label{fig:PathPlanningReasoning}
 \end{figure}
@@ -1024,7 +1024,7 @@ Beyond a hand-built pipeline, this \textit{extends} the system. A survey chapter
     \item chunk documents, then prompt an LLM to extract \textit{entities} (keys) and \textit{relations} (typed edges with descriptions);
     \item attach descriptive \textit{values} to nodes (summaries / paraphrases / explanations, not raw text), \textbf{grounded}: no value unless supported by the chunk; one key may hold several values from different contexts; deduplicate keys.
 \end{itemize}
-\textbf{Dual-level retrieval:} \textit{low-level} keywords $k^{(l)}$ match specific entities, \textit{high-level} keywords $k^{(g)}$ match broad themes/relations. LightRAG retrieves keys and values (not chunks), gathers neighboring nodes, and an LLM integrates them into the answer.
+\textbf{Dual-level retrieval:} \textit{low-level} keywords $k^{(l)}$ match specific entities, \textit{high-level} keywords $k^{(g)}$ match broad themes/ relations. LightRAG retrieves keys and values (not chunks), gathers neighboring nodes, and an LLM integrates them into the answer.
 
 \paragraph{RAGFlow.} Open-source framework centered on \textit{deep document understanding}, hybrid retrieval, agentic workflows, and a visual/no-code interface. Pipeline: raw docs $\rightarrow$ ingestion $\rightarrow$ structured knowledge units $\rightarrow$ indexing (vector/BM25/hybrid). The \textit{ingestion service} does multi-format parsing (PDF, Word/PPT, HTML, Markdown), structural segmentation (layout preservation, table/diagram extraction, OCR), and LLM-assisted enrichment (clean noisy text, normalize terminology, summarize long inputs).
 

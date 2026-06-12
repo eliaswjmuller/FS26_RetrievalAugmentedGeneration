@@ -1,6 +1,6 @@
 # Fdb version 4
-["pdflatex"] 1781280686.88632 "/Users/elias.mueller/Code/04_Studies/FS26_RetrievalAugmentedGeneration/main.tex" "main.pdf" "main" 1781280688.04221 0
-  "/Users/elias.mueller/Code/04_Studies/FS26_RetrievalAugmentedGeneration/main.tex" 1781280686.71047 78738 80127ae3b1ea75faaf7b510d9553fceb ""
+["pdflatex"] 1781280851.6723 "/Users/elias.mueller/Code/04_Studies/FS26_RetrievalAugmentedGeneration/main.tex" "main.pdf" "main" 1781280852.8082 0
+  "/Users/elias.mueller/Code/04_Studies/FS26_RetrievalAugmentedGeneration/main.tex" 1781280851.46484 78731 efda769d5487d401a55009d526eaf666 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super-ts1.enc" 1136849721 2900 1537cc8184ad1792082cd229ecc269f4 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/local/texlive/2026/texmf-dist/fonts/tfm/jknappen/ec/tcrm1000.tfm" 1136768653 1536 e07581a4bb3136ece9eeb4c3ffab8233 ""
@@ -235,10 +235,10 @@
   "img/SoftwareTesting.png" 1781280134.05735 77616 fda8588849c62350abd79110a7fd879d ""
   "img/TDD.png" 1781280134.05487 44822 f7e21ce6afafd03fe1669938f9e4ec2e ""
   "img/UserTesting.png" 1781280134.0429 100407 11c954e4c21481200ee44eb5141a289a ""
-  "main.aux" 1781280687.95903 17884 a4e641181240efd1d076983fb25aeb61 "pdflatex"
-  "main.out" 1781280687.96688 7371 ea63d74238a6b66cb2d8a368027b0d9f "pdflatex"
-  "main.tex" 1781280686.71047 78738 80127ae3b1ea75faaf7b510d9553fceb ""
-  "main.toc" 1781280687.96802 8007 0d0081f74ebd11ada6a083b2400ee76e "pdflatex"
+  "main.aux" 1781280852.72714 17883 c363a4ede26422ab9c2c6ba5ae22abcb "pdflatex"
+  "main.out" 1781280852.73396 7371 ea63d74238a6b66cb2d8a368027b0d9f "pdflatex"
+  "main.tex" 1781280851.46484 78731 efda769d5487d401a55009d526eaf666 ""
+  "main.toc" 1781280852.73817 8006 594f2e442c31b3cb2ef632d144d2fede "pdflatex"
   (generated)
   "main.aux"
   "main.log"
