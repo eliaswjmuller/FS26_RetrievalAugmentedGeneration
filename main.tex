@@ -29,6 +29,7 @@
 \usepackage{graphicx, float}
 \usepackage{caption, subcaption}
 \usepackage{booktabs}
+\usepackage{wrapfig}
 
 % Algorithms
 \usepackage{algorithm}
@@ -62,6 +63,8 @@
 \tableofcontents
 \newpage
 \section{RAG Introduction}
+\textbf{RAG} $=$ Retrieval (fetch relevant context) $+$ Generation (condition an LLM on it), to combat hallucinations. This summary follows that split: \textbf{Information Retrieval} (the ``R''), \textbf{Language Modeling} (the ``G''), then \textbf{RAG Engineering} (building, serving, testing, and extending the system).
+
 \paragraph{Motivation}
 
 \begin{itemize}
@@ -77,10 +80,8 @@ Many methods exist at different stages:
     \item HITL (Post-Generation): Both intrinsic and extrinsic, but not scalable and expensive
 \end{itemize}
 
-
-
 \section{Information Retrieval}
-Distinction Sparse and Dense does not relate to data storage, but rather to the conceptual approach. \textit{Sparse} methods are the non-neural, statistical approaches (we count) whereas \textit{Dense} approaches rely on neural encoding methods incorporation sematic information. 
+The ``R'' in RAG: find the documents relevant to a query. Two paradigms (\textit{sparse} then \textit{dense}), then how to evaluate a retriever. The distinction Sparse vs.\ Dense does not relate to data storage, but rather to the conceptual approach. \textit{Sparse} methods are the non-neural, statistical approaches (we count) whereas \textit{Dense} approaches rely on neural encoding methods incorporation sematic information. 
 \subsection{Sparse Encoding}
 Non-neural, statistical approaches that generally result in a sparse term-document representation in the query logic. To be used whenever speed and precision (in the metric sense) matters. But sparse encodings have a recall issue.
 \subsubsection{Binary Indexing}
@@ -114,7 +115,7 @@ High TF-IDF weights are thus assigned to a term $t$ if it appears only in a few 
     We use the IDF for computational efficiency, since df-values can be very large for large corpora.\\
     Since the vocabulary $V$ is compiled from the corpus $\mathbb{D}$ we can only represent tokens in $V$. With $n$ documents 
     $$1 \leq \text{df}_t \leq n \implies 1 \leq \frac{n}{\text{df}_t} \leq n \implies 0 \leq \text{idf}_t \leq \log n$$
-    However, idf can only be $0$ for Query-Terms that are Out-Of-Domain and not for tokens is $V$. 
+    However, idf can only be $0$ for Query-Terms that are Out-Of-Domain and not for tokens is $V$. The \textit{base of the logarithm} does not affect document ranking --- it rescales all idf-values by a constant and thus preserves their order.
 \end{itemize}
 
 \noindent\textbf{Drawbacks of TF-IDF:}
@@ -130,7 +131,7 @@ BM25 (Best Matching 25) augments TF-IDF with advanced frequency terms, document 
 $$
 \text{BM25}_{q,d} = \sum_{i=1}^{n} \text{IDF}(q_i) \cdot \frac{f_{q_i,d} \cdot (k_1 + 1)}{f_{q_i,d} + k_1 \cdot \left(1 - b + b \cdot \frac{|d|}{\text{avg. dl}}\right)}
 $$
-where $f_{q_i,d}$ is the term frequency of $q_i$ in $d$, $|d|$ the document length, $k_1$ a TF saturation parameter, $b$ a length normalization parameter, and
+where $f_{q_i,d}$ is the term frequency of $q_i$ in $d$, $|d|$ the document length, $k_1\in[1.2,2.0]$ a TF saturation parameter, $b=0.75$ a length normalization parameter, and
 $$
 \text{IDF}(q_i) = \log\left(\frac{N - n(q_i) + 0.5}{n(q_i) + 0.5} + 1\right)
 $$
@@ -139,7 +140,7 @@ with $N$ the corpus size, $n(q_i)$ the number of documents containing $q_i$, and
 \textit{Memory and Storage Challenges} are, however, a common issue with BM25 thus we required an \textit{Inverted Index} for large scale corpora settings.
 
 \subsubsection{Inverted Index}
-The mapping $f:d\mapsto t$ is reversed, s.t., $g:t\mapsto d$. Wrt. the TD-Matrix this means that we no longer consider the Term-Document mapping, but store $\texttt{Term|TF}\mapsto\texttt{Inverted Linked List} \text{ (Chain of Document IDs)} \rightarrow$ No more zeros and space-efficient storage via data structs like \texttt{json}
+The mapping $f:d\mapsto t$ is reversed, s.t., $g:t\mapsto d$. Wrt. the TD-Matrix this means that we no longer consider the Term-Document mapping, but store $\texttt{Term}\mapsto\texttt{Inverted Linked List} \text{ (Chain of Document IDs | TFs)} \rightarrow$ No more zeros and space-efficient storage via data structs like \texttt{json}
 
 \subsubsection{BM25 ranking with Inverted Index}
 Given $\mathcal{D}$ documents and query $\mathcal{Q}=\{q_1, \dots, q_n\}$ we return a ranked list of top $k$ documents.\\
@@ -154,10 +155,14 @@ Given $\mathcal{D}$ documents and query $\mathcal{Q}=\{q_1, \dots, q_n\}$ we ret
 \BlankLine
 
 \textbf{Step 1: Build Inverted Index}\;
+
 \ForEach{document $D_i$}{
     Split $D_i$ into terms $\{t_1, t_2, \dots\}$\;
+
     Compute term frequencies for $D_i$\;
+
     Update $I[t]$ with $(D_i, \mathrm{tf})$ for each term $t$\;
+
     Compute length $L[D_i] = \mathrm{len}(D_i)$\;
 }
 Compute average document length $\mathrm{avg.dl} = \dfrac{\sum L[D_i]}{N}$\tcp*{normalize}
@@ -182,12 +187,15 @@ Compute average document length $\mathrm{avg.dl} = \dfrac{\sum L[D_i]}{N}$\tcp*{
 \BlankLine
 
 \textbf{Step 3: Rank Documents}\;
+
 Sort $\mathit{scores}$ in descending order\;
+
 \Return top $k$ documents with the highest scores\;
 \end{algorithm}
  
 
 \subsection{Dense Retrieval}
+Neural encoding into a shared vector space to capture the \textit{semantics} sparse methods miss: the vector space model, (approximate) nearest-neighbor search to make it scale, and how the embeddings are learned.
 \subsubsection{Dense Encoding: Vector Space Model}
 \textbf{Motivation:} While sparse encodings are easy and interpretable, the do not model the semantics.\\
 
@@ -235,7 +243,7 @@ Options for Approximate NNS
 \end{itemize}
 
 \subsubsection{Dense Encoding: Locality-Sensitive Hashing}
-We use Local Sensitivity (Bucketing) for approximate NNS. Given tow doc embeddings, some similarity measure, a threshold $s$ and a hash function $h$, then we can hash similar docs into the same bucket and only search within this:
+We use Local Sensitivity (Bucketing) for approximate NNS. The key property is that hash functions are \textit{distance-preserving}, i.e. $\text{dist}(x,y)\propto \text{dist}(h(x),h(y))$, so similar items collide into the same bucket. Given tow doc embeddings, some similarity measure, a threshold $s$ and a hash function $h$, then we can hash similar docs into the same bucket and only search within this:
 \begin{itemize}
     \item sim$(e_{d_1}, e_{d_2}\geq s) \rightarrow h(e_{d_1})=h(e_{d_2})$
     \item sim$(e_{d_1}, e_{d_2}< s) \rightarrow h(e_{d_1})\neq h(e_{d_2})$
@@ -261,7 +269,15 @@ We use Local Sensitivity (Bucketing) for approximate NNS. Given tow doc embeddin
     \end{itemize}
 \end{enumerate}
 
+\paragraph{Hash function choice} Bit sampling ignores the actual similarities when bucketing. Alternatively, use \textit{random-projection (cosine) hashing}: given a random vector $e_{r_j}\in\mathbb{R}^k$ and threshold $s$,
+$$
+f(e_{r_j}, e_q)= \begin{cases} 1 & \text{if } \text{sim}(e_{r_j}, e_q)\geq s \\ 0 & \text{otherwise}\end{cases}, \qquad h_i(e_q)=f(e_{r_j}, e_q), \quad \forall i \in [1,\dots,K], \ \forall j \in [1,l]
+$$
+with the hash value formed over $l$ such projections. Now the buckets do reflect similarity. Training the $e_{r_j}$ instead of sampling them randomly yields \textit{Semantic Hashing} (Salakhutdinov \& Hinton 2007).
+
 \subsubsection{Dense Retrieval Learned Embeddings: Optimization Objectives}
+\paragraph{Encoder choice (pooling).} A document embedding aggregates its word embeddings, either by \textit{Mean Pooling} $e_d=\frac{1}{|d|}\sum_{w\in d}e_w$ or \textit{Max Pooling} $e_{d_i}=\max_{w\in d}e_{w_i}\ \forall i\in[1,\dots,k]$. Off-the-shelf encoders (Sent2Vec, Sentence-BERT) optimize generic semantic similarity rather than IR and tend to inflate similarity scores $\rightarrow$ motivates IR-specific training.\\
+
 The choice of embeddings matters a lot in training a model. While cosine similarity is common, recent research has uncovered limitations.
 
 \paragraph{(1) Cosine similarity is not automatically meaningful (Steck et al.\ 2024).}
@@ -288,7 +304,7 @@ Setup: query $\mathbf{q}$, positive doc $\mathbf{d}^+$, negative doc $\mathbf{d}
 \begin{itemize}
     \item \textbf{Margin / triplet hinge} -- \emph{pairwise}:
     $$\mathcal{L}_\theta = \sum_{\mathbf{d}^+\in D^+}\sum_{\mathbf{d}^-\in D^-}\max\!\big(0,\ \mathrm{sim}(\mathbf{q},\mathbf{d}^+)-\mathrm{sim}(\mathbf{q},\mathbf{d}^-)+\epsilon\big)$$
-    $\epsilon$ = margin (required gap; controls sensitivity). \emph{Note on signs:} as written this treats $\mathrm{sim}$ as a \emph{distance} (want $\mathrm{sim}(q,d^+)$ small). For a true similarity (higher = better) the standard form flips to $\max(0,\,\epsilon-\mathrm{sim}(q,d^+)+\mathrm{sim}(q,d^-))$.
+    $\epsilon$ = margin (required gap; controls sensitivity). \emph{Sign note:} as written $\mathrm{sim}$ acts as a \emph{distance}; for a true similarity (higher = better) flip to $\max(0,\,\epsilon-\mathrm{sim}(q,d^+)+\mathrm{sim}(q,d^-))$.
     \item \textbf{InfoNCE / softmax NLL}-- \emph{1 pos vs.\ $n$ negs}:
     $$\mathcal{L}_\theta = -\log\frac{e^{\mathrm{sim}(\mathbf{q}_i,\mathbf{p}_i^+)}}{e^{\mathrm{sim}(\mathbf{q}_i,\mathbf{p}_i^+)}+\sum_{j=1}^{n}e^{\mathrm{sim}(\mathbf{q}_i,\mathbf{p}_j^-)}}$$
     \emph{Intuition:} cross-entropy that wants the positive to ``win'' the softmax over all negatives. More negatives $\to$ harder, better-calibrated gradient.
@@ -361,17 +377,18 @@ Given query $\mathbf{q}$ and positive $\mathbf{d}^+$, how to pick negatives from
     \end{itemize}
 \end{itemize}
 
-
+\newpage
 \section{Language Modeling}
+The ``G'' in RAG: model the probability of text to generate answers. The arc: from count-based n-grams to neural autoregressive LMs (\textit{basics}), the \textit{architectures} that realize them, their \textit{scaling} behavior, and the learning/reasoning \textit{paradigms} built on top.
 \subsection{LLM Basics}
-Probabilistic natural language modeling form a sequence of $n$ tokens $X=(x_1,\dots, x_n)$ given a vocabulary $V$, basing on the causality of languages and their context dependence (requirement): 
+An LM assigns probabilities to token sequences such that proper language scores higher, e.g. $P(\text{the mouse ate the cheese})\gg P(\text{the the ate cheese mouse})$. Model these probabilities and we can generate. Probabilistic natural language modeling form a sequence of $n$ tokens $X=(x_1,\dots, x_n)$ given a vocabulary $V$, basing on the causality of languages and their context dependence (requirement):
 $$
 P(X)= \prod_{i=1}^nP(x_i|x_1, \dots , x_{i-1})
 $$
 
 \textbf{Ngram LM} based on the \textit{Markov Assumption} (generated token counts as well): $P(X)=\prod_{i=1}^nP(x_i|x_{i-N+1:i-1}) \rightarrow \text{e.g. Bigram} P(X)=\prod_{i=1}^nP(x_i|x_{i-1})$. \\
 
-This prediction is based on the surroundings of the generated tokens by extracting a \textit{probability distribution} given the corpus.
+This prediction is based on the surroundings of the generated tokens by extracting a \textit{probability distribution} given the corpus. The vocabulary $V$ consists of \textit{subword} tokens (e.g. Byte-Pair Encoding), so $|V|$ is fixed and out-of-vocabulary words are split into known pieces.
 
 \subsubsection{Count-Based LM}
 Count how many times a target work appears in different contexts (\texttt{C(target|context$_i$)}). Goal is to find some \texttt{C(target|context$_j$)} $\gg$ \texttt{C(target|context$_i$)}: \textit{Maximum Likelihood Estimation (MLE)}:
@@ -413,18 +430,619 @@ with the $\lambda$s estimated on held-out data via \textbf{Expectation Maximizat
 \end{itemize}
 
 \subsubsection{Auto-regressive LM}
-Using high dimensional encodings (word embeddings) to model probabilities.
+Replace \textit{counting} with high-dimensional \textit{word embeddings} to model the same chain-rule factorization $$P(X)=\prod_{i=1}^nP(x_i|x_{<i}).$$ Instead of MLE counts, we maximize the likelihood of proper language via the \textbf{cross-entropy loss}:
+$$
+\mathcal{L}_\theta = -\frac{1}{N}\sum_{i=1}^n y_i(x_i)\,\log P(x_i|x_{<i})
+$$
+where $y_i(x_i)$ is the true (\textit{one-hot}) distribution $\rightarrow$ only the true token's term survives, so we simply push up $\log P$ of the correct next token.
+
+\vspace{-0.3cm}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.5\linewidth]{img/AutoRegnextTokenPred.png}
+    \caption{Auto-Regressive Next-Token-Prediction}
+    \label{fig:AutoRegnextTokenPred}
+\end{figure}
+
+\paragraph{Forward pass (per token $x_i$).}
+\begin{enumerate}
+    \item \textbf{Embed:} $(x_1,\dots,x_n)\mapsto(e_{x_1},\dots,e_{x_n})^T$ via the embedding layer
+    \item \textbf{Contextualize:} hidden repr. of the prefix $h_{<i}=f(e_{x_1},\dots,e_{x_{i-1}})$, with $f$ the network (e.g. Transformer)
+    \item \textbf{Predict (softmax):} score each vocab token by its similarity to $h_{<i}$
+    $$P(x_i|x_{<i})=\frac{\exp(e_{x_i}^T h_{<i})}{\sum_{x\in V}\exp(e_x^T h_{<i})}$$
+    \item \textbf{Loss \& update:} backpropagate $\theta \leftarrow \theta - \eta\,\nabla_\theta \mathcal{L}_\theta$
+\end{enumerate}
+
+\noindent\textbf{Self-supervision:} the labels are the next tokens themselves --- \textit{language is its own label} $\rightarrow$ massive pre-training without manual annotation (the key idea enabling LLMs).
+
+\paragraph{Decoding strategies.} Generation samples token-by-token until \texttt{<eos>}. How we pick from $P(x_i|x_{<i})$:
+\begin{itemize}
+    \item \textbf{Greedy:} $x_i=\arg\max_x P(x|x_{<i})$ --- deterministic, but repetitive/bland.
+    \item \textbf{Top-$k$:} keep the $k$ highest, re-normalize over them, sample: $P'(x_i|x_{<i})=\frac{P(x_i|x_{<i})}{\sum_{j\in\text{top-}k}P(x_j|x_{<i})}$. $k{=}1$ = greedy; larger $k$ = more diverse.
+    \item \textbf{Top-$p$ / nucleus:} smallest set $\mathcal{N}$ with cumulative mass $\sum_{x\in\mathcal{N}}P(x|x_{<i})>p$, then sample $\rightarrow$ \textit{dynamic} candidate count ($p{=}0.9$ common).
+    \item \textbf{Temperature $\tau$:} rescale logits before softmax, $\frac{\exp(e_{x_i}^T h_{<i}/\tau)}{\sum_{x\in V}\exp(e_x^T h_{<i}/\tau)}$. $\tau{<}1$ sharpens (more deterministic), $\tau{>}1$ flattens (more diverse), $\tau{=}1$ unchanged.
+\end{itemize}
 
 \subsubsection{LM Performance Evaluation}
+\textbf{Goal:} measure how well an LM generates proper language (higher probability). Log-likelihood $\sum_{i=1}^n \log P(x_i|x_{<i})$ is possible but it grows with length and is not interpretable.
+
+\paragraph{Perplexity.} The length-normalized, exponentiated negative log-likelihood:
+$$
+\text{PPL}(X_\theta) = 2^{-\frac{1}{n}\sum_{i=1}^n \log_2 P(x_i|x_{<i})} = \exp\!\left(-\frac{1}{n}\sum_{i=1}^n \log P(x_i|x_{<i})\right)
+$$
+Equivalently via entropy: $\text{PPL}(X_\theta)=2^{H(X_\theta)}$ with $H(X_\theta)=-\frac{1}{n}\sum_{i=1}^n \log_2 P(x_i|x_{<i})$, i.e. perplexity is just the (exponentiated) cross-entropy loss, so the eval metric \textit{is} the training objective.
+
+\begin{itemize}
+    \item \textbf{Intuition:} perplexity is the average \textit{number of choices} the LM considers per step: $\text{PPL}=8$ $\approx$ choosing uniformly among 8 tokens. Lower = less "perplexed" = better.
+    \item \textbf{Base:} $\log_2$ (bits: "how many bits to encode each token") for perplexity; training likelihoods often use $\ln$. The base only rescales and does not change the ranking.
+\end{itemize}
+
+\noindent\textbf{Bounds} $\text{PPL}(X_\theta)\in[1,|V|]$:
+\begin{itemize}
+    \item \textbf{Lower $=1$:} $H=0$, no uncertainty; a perfect, fully confident LM (not perplexed at all).
+    \item \textbf{Upper $=|V|$:} worst case is uniform random guessing $P=\frac{1}{|V|}\Rightarrow \text{PPL}=2^{-\frac{1}{n}\cdot n\cdot \log_2\frac{1}{|V|}}=|V|$. Picking randomly from the (tokenizer) vocabulary.
+\end{itemize}
+
+\subsection{LM Architectures}
+\textbf{Chronology:} Encoder-Decoder (Seq2Seq, 2014) $\rightarrow$ Encoder-Only (BERT, 2018) $\rightarrow$ Decoder-Only (GPT, 2018).
+
+\paragraph{From SMT to NMT.} Statistical MT decomposes via Bayes
+$$\theta_{SMT}:\ \arg\max_y P(y|x) \approx \arg\max_y \underbrace{P(x|y)}_{\text{translation}}\underbrace{P(y)}_{\text{LM}},$$
+needing a reverse model $+$ LM $\rightarrow$ heavy hand-crafted rules (alignment, dictionaries, morphology). \textbf{Neural MT} models $P(y|x)$ \textit{directly}, no decomposition.
+
+\paragraph{Encoder-Decoder.} \textit{Seq2Seq} (I/O view) $=$ \textit{Encoder-Decoder} (model view); encoders evolved CNN $\rightarrow$ RNN $\rightarrow$ \textbf{Transformer} (also T5, BART). Transformer backbone:
+\begin{itemize}
+    \item \textbf{Positional Encoding} (inject order): $PE_{(pos,2i)}=\sin(pos/10000^{2i/d})$, $PE_{(pos,2i+1)}=\cos(pos/10000^{2i/d})$
+    \item \textbf{Self-Attention:} $\text{Attention}(Q,K,V)=\text{softmax}\!\left(\frac{QK^T}{\sqrt{d_k}}\right)V$
+    \item \textbf{Multi-Head:} $\text{Concat}(\text{head}_1,\dots,\text{head}_h)W^O$, with $\text{head}_i=\text{Attention}(QW_i^Q,KW_i^K,VW_i^V)$
+\end{itemize}
+
+\paragraph{Encoder-Only (BERT).} Motivation: want \textit{representations} not generation, and autoregressive Transformers are \textit{unidirectional} (late context can't inform early). \textbf{B}idirectional \textbf{E}ncoder \textbf{R}epr. from \textbf{T}ransformers, trained with \textbf{Masked LM}: 15\% of tokens selected (very inefficient!), of which 80\% $\rightarrow$ \texttt{[MASK]}, 10\% $\rightarrow$ random token, 10\% unchanged; predict only the masked tokens (all at once).
+
+\paragraph{Decoder-Only (GPT).} Causal, autoregressive (CLM) $\rightarrow$ strongest zero-shot generalization after self-supervised pre-training; the SOTA choice. Decoder-only $>$ encoder-decoder:
+\begin{itemize}
+    \item Enc-Dec: task-tailored (reduced generality), slow inference, task-specific objectives (costly).
+    \item Dec-Only: unified objective (CLM loss), efficient (only the decoder), scales easily (scaling law), versatile via \textbf{prompting} (any classification $\rightarrow$ generation task).
+\end{itemize}
+\textit{T5 (enc-dec) vs GPT-3 (dec-only):} explicit task-specific vs implicit free-form prompts; no vs yes few-shot; fine-tuning on curated data vs pre-training on arbitrary text; hard vs easy to scale.
+
+\subsection{Scaling Law}
+\paragraph{Model perspective: emergent abilities of LLMs.} New, sophisticated capabilities that are \textit{not explicitly trained}, appearing only past a scale threshold --- scale-dependent, emergent, non-programmed, data-driven. Scaling is \textit{linear} in the encoder-decoder era but \textit{non-linear} (sharp jumps) in the decoder-only era.
+
+\vspace{-0.3cm}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.5\linewidth]{img/ScalingLaw.png}
+    \caption{Scaling Law: Left in the Encoder-Decoder Period (linear); Right in the Decoder-Only Period (non-linear)}
+    \label{fig:ScalingLaw}
+\end{figure}
+
+\paragraph{Data perspective: compute-optimal training.} Under a fixed compute budget, how to trade model size $N$ vs.\ training tokens $D$? A power-law links $N$, $D$, and performance:
+\begin{itemize}
+    \item \textbf{OpenAI (Kaplan):} model size $\approx 3\times$ more important than tokens $\rightarrow$ scale the model.
+    \item \textbf{Chinchilla:} optimal token-to-parameter ratio $\approx 20{:}1$ $\rightarrow$ scale $N$ and $D$ \textit{equally}.
+    \item \textbf{Llama-3:} pushes the ratio to $\approx 215{:}1$ (deliberate \textit{overtraining}).
+\end{itemize}
+\textbf{Over- vs undertraining:} overtraining costs more compute but yields more capable (often smaller) models; today's LLMs are in fact heavily \textit{undertrained} ($100$--$1000\times$ from convergence).
+
+\paragraph{Inference scaling (new trend).} Spend more compute at \textit{inference} time (not only training) for better performance. \textbf{Open directions:} optimal token-parameter ratio, data quality/efficiency, inference scaling, novel architectures (RWKV, RetNet, Mamba $=$ selective state spaces).
 
 \subsection{LLM Paradigms}
-\section{RAG Engineering}
-\subsection{Backend Engineering}
-\subsection{Frontend Engineering}
-\subsection{System Testing}
-\subsection{RAG Applications}
-\section{MISC}
-\subsection{Guest Lectures}
+Two stages of the LLM life cycle: \textit{learning} paradigms change the parameters (training), \textit{reasoning} paradigms leverage the frozen parameters to solve tasks (inference).
 
+\subsubsection{Learning Paradigms}
+\paragraph{Pre-training + Fine-tuning.} The classic two-stage \textit{transfer learning} recipe:
+\begin{itemize}
+    \item \textbf{Pre-training:} massive \textit{unlabeled} data, self-supervised (auto-regressive CLM); the model picks up syntax, semantics, world knowledge.
+    \item \textbf{Full-parameter fine-tuning:} small \textit{labeled} dataset, supervised; adapts the model to a specific task.
+\end{itemize}
+Worked well on \textit{intermediate} tasks (POS tagging, NER, coreference, parsing), but two problems: (1) modeling intermediate tasks separately is inefficient and does not solve \textit{end} tasks end-to-end; (2) it is \textit{rigid}, we must query the model the way it was trained $\rightarrow$ we want LLMs to follow human instructions, with minimal train-inference mismatch and updatable knowledge (no catastrophic forgetting).
+
+\textit{Teacher forcing} (aside): during training condition on the gold tokens, not the model's own predictions $\rightarrow$ fast convergence, but it is the root of the train-inference mismatch.
+
+\paragraph{Instruction Tuning.} Full-parameter fine-tuning on \{Instruction\}-\{Input\}-\{Response\} triplets with CLM. Any task is reformulated into this format, so adapting to human-like instructions mitigates the train-inference mismatch.
+$$
+\mathcal{L}_\theta = -\frac{1}{R}\sum_{j=1}^R \log P(y_j|y_{<j},x;\theta), \quad x=\text{Instruction}+\text{Input},\ y=\text{Response}
+$$
+\begin{itemize}
+    \item \textbf{Completion-only} (loss on the response only): better instruction-\textit{following}.
+    \item \textbf{Full-prompt} (loss on the whole sequence): better output-\textit{structuring}.
+    \item Many instruction datasets are 100\% \textit{synthetic} (LLM-generated).
+\end{itemize}
+\textit{Mixture of Experts} (aside): replace the FFNN with an MoE layer (one router $+$ many experts, only a few activated per token) $\rightarrow$ huge parameter count but \textit{sparse} activation, so faster inference.
+
+\paragraph{Parameter-Efficient Fine-Tuning (PEFT).} Instruction tuning still updates \textit{all} parameters. PEFT freezes the pre-trained model and trains only a small set of extra parameters.
+\begin{wrapfigure}{r}{0.3\textwidth}
+    \vspace{1.4cm}
+    \centering
+    \hspace*{0.5cm}\includegraphics[width=0.26\textwidth]{img/LoRA.png}
+    \label{fig:LoRa}
+\end{wrapfigure}
+\begin{itemize}
+    \item \textbf{Prefix Tuning:} prepend a trainable prefix matrix $P_\theta\in\mathbb{R}^{|P_{idx}|\times \dim(h_i)}$ to the activations at \textit{every} layer ($\approx 1\%$ of params):
+    $$h_i = \begin{cases} P_\theta[i,:], & i\in P_{idx} \\ \text{LM}_\phi(z_i, h_{<i}), & \text{otherwise} \end{cases}, \quad z=[\text{PREFIX};x;y]$$
+    PrefixLM $=$ CLM $+$ prefix; the prefix is not inherently causal ($+$BERT stays MLM, $+$GPT stays CLM).
+    \item \textbf{Prompt Tuning:} train only the embeddings of \textit{soft prompt} tokens (numerical, not human-readable) prepended at the input level. \textit{Hard prompts} are human-readable natural-language tokens.
+    \item \textbf{LoRA} (Low-Rank Adaptation): task adaptation has low \textit{intrinsic rank}, so the update $\Delta W$ is itself low-rank. Freeze $W_0$ and learn only the factorized adapter $\Delta W = BA$:
+    $$h = W_0 x + \Delta W x = W_0 x + BAx, \quad W_0\in\mathbb{R}^{d\times k},\ B\in\mathbb{R}^{d\times r},\ A\in\mathbb{R}^{r\times k},\ r\ll\min(d,k)$$
+    Trainable params drop from $d\times k$ to $r(d+k)$. At inference $\Delta W$ can be \textit{merged} back into $W_0$ (use $W_0+BA$) $\rightarrow$ no added latency.
+    \item \textbf{QLoRA:} LoRA on a quantized base model (further memory savings).
+\end{itemize}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llll}
+\toprule
+ & \textbf{Instruction} & \textbf{Prefix} & \textbf{Prompt} \\
+\midrule
+Prompt type & Hard & Soft & Soft \\
+Training aim & Instruction-following & Tuning efficiency & Tuning efficiency \\
+Interpretability & High & Low & Medium \\
+Prepend location & Input layer & Activations (every layer) & Input \\
+\bottomrule
+\end{tabular}
+\caption{Instruction vs.\ Prefix vs.\ Prompt tuning.}
+\label{tab:peft}
+\end{table}
+
+\textit{Prompt engineering}: search for the best static \textit{hard} prompts (readable $+$ performant); designing the prepended soft vectors is \textit{soft} prompt engineering.
+
+\paragraph{Alignment (RLHF).} Instruction tuning and PEFT still rely on teacher forcing (likelihood $\neq$ human preference) and cannot encode what humans actually \textit{want}. \textbf{RLHF} fine-tunes without teacher forcing by optimizing a human-preference reward, targeting ethics (no toxic output), faithfulness, and fewer hallucinations.
+
+
+\textit{Generation as RL}: a sequential decision process with the reward granted at the sequence level.
+\vspace{-0.3cm}
+\begin{table}[H]
+\centering
+\begin{minipage}{0.46\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{img/RLLoop.png}
+\end{minipage}\hfill
+\begin{minipage}{0.5\textwidth}
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{RL} & \textbf{RL for LLMs} \\
+\midrule
+Agent & the LLM \\
+Environment & input prompt \\
+State & tokens generated so far $x_{<j}$ \\
+Action & select the next token \\
+Reward & preference feedback signal \\
+\bottomrule
+\end{tabular}
+\end{minipage}
+\label{tab:rl-llm}
+\end{table}
+
+\noindent\textbf{(1) Reward modeling (Bradley-Terry).} Humans label preference pairs $(x,y_w,y_l)$ (winner $\succ$ loser). The preference probability is a sigmoid of the \textit{reward gap}:
+$$P(y_w\succ y_l\mid x)=\sigma\big(r^*(x,y_w)-r^*(x,y_l)\big)$$
+The true $r^*$ is intractable, so fit a proxy reward model $r_\phi$ by maximizing this likelihood:
+$$\mathcal{L}_R = -\mathbb{E}_{(x,y_w,y_l)\sim\mathcal{D}}\big[\log\sigma(r_\phi(x,y_w)-r_\phi(x,y_l))\big]$$
+Then optimize the policy to maximize reward, with a \textit{KL penalty} keeping it near the SFT reference (a trust region that prevents reward hacking / degeneration):
+$$\max_{\pi_\theta}\ \mathbb{E}_{x\sim\mathcal{D},\,y\sim\pi_\theta}[r_\phi(x,y)] - \beta\, D_{KL}\big[\pi_\theta(y\mid x)\,\|\,\pi_{ref}(y\mid x)\big]$$
+
+\noindent\textbf{(2) PPO} optimizes that objective. \textit{Intuition:} raise the probability of high-advantage actions, but \textit{clip} the policy ratio so each step stays in a trust region:
+$$\mathcal{L}^{clip}_\theta = \mathbb{E}_t\big[\min(r_t(\theta)\hat{A}_t,\ \text{clip}(r_t(\theta),1-\epsilon,1+\epsilon)\,\hat{A}_t)\big], \quad r_t(\theta)=\frac{\pi_\theta(a_t\mid s_t)}{\pi_{\theta_{old}}(a_t\mid s_t)}$$
+with advantage $\hat A_t$ and an added entropy bonus (exploration). \textit{Cost:} 3 models held in RAM at once $\rightarrow$ heavy and unstable:
+\begin{itemize}
+    \item \textbf{Policy} $\pi_\theta$: initialized from SFT, the only model PPO trains.
+    \item \textbf{Reference} $\pi_{ref}$: a frozen SFT copy, anchors the KL penalty.
+    \item \textbf{Reward} $r_\phi$: trained on human preferences, frozen, scores the generated outputs.
+\end{itemize}
+
+
+
+\noindent\textbf{(3) Simplifications} progressively remove components:
+\begin{itemize}
+    \item \textbf{DPO} (Direct Preference Optimization): the optimal RLHF policy implies the reward is $r(x,y)=\beta\log\frac{\pi_\theta(y\mid x)}{\pi_{ref}(y\mid x)}+\text{const}$, so the \textit{policy is its own implicit reward}. Substituting into Bradley-Terry collapses RLHF into one classification loss on pairs:
+    $$\mathcal{L}_{DPO}=-\mathbb{E}_{(x,y_w,y_l)\sim\mathcal{D}}\log\sigma\!\Big(\beta\log\tfrac{\pi_\theta(y_w\mid x)}{\pi_{ref}(y_w\mid x)}-\beta\log\tfrac{\pi_\theta(y_l\mid x)}{\pi_{ref}(y_l\mid x)}\Big)$$
+    \textit{Intuition:} push the winner's log-prob up and the loser's down, each measured \textit{relative to the frozen reference}. \textit{No reward model, no RL loop}; load two models, train one.
+\vspace{-0.3cm}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.5\linewidth]{img/DPO.png}
+    \label{fig:DPO}
+\end{figure}
+    \item \textbf{SimPO}: DPO still needs $\pi_{ref}$ to form its reward. SimPO drops it, using the policy's own \textit{length-normalized} average log-prob as the implicit reward $r(x,y)=\frac{\beta}{|y|}\log\pi_\theta(y\mid x)$. \textit{Even lighter} (one model only); dividing by $|y|$ removes length bias and matches the reward to what decoding actually optimizes.
+    \item \textit{*PO zoo} (IPO, CPO, ORPO, R-DPO, GRPO): all just different ways to push preferred-output probability up. \textbf{GRPO} (Group Relative Policy Optimization) is PPO that samples a \textit{group} of outputs per prompt and scores each by its reward \textit{relative to the group average}, dropping the separate value/critic model; this group-relative baseline underlies modern reasoning RL.
+\end{itemize}
+
+\noindent
+\begin{minipage}[c]{0.63\textwidth}
+\textbf{(4) KTO} (Kahneman-Tversky Optimization) changes the \textit{feedback form}: binary good/bad labels instead of pairs, scored by a prospect-theory utility (humans are \textit{loss-averse}: value concave for gains, convex for losses). \textit{Intuition:} aligns to human utility, and binary signals are far cheaper to collect than pairwise preferences.
+\[\mathcal{L}_{KTO}=\mathbb{E}_{(x,y)\sim\mathcal{D}}\big[1-\hat h(x,y;\beta)\big]\]
+\[\hat h = \begin{cases} \sigma\!\big(\beta\log\tfrac{\pi_\theta(y\mid x)}{\pi_{ref}(y\mid x)} - \beta D_{KL}\big), & y\ \text{desirable} \\[4pt] \sigma\!\big(\beta D_{KL} - \beta\log\tfrac{\pi_\theta(y\mid x)}{\pi_{ref}(y\mid x)}\big), & y\ \text{undesirable} \end{cases}\]
+\end{minipage}\hfill
+\begin{minipage}[c]{0.34\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{img/KTO.png}
+\end{minipage}
+
+\noindent with $D_{KL}=D_{KL}(\pi_\theta\|\pi_{ref})$: desirable outputs maximize $\hat h$, undesirable ones minimize it.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llll}
+\toprule
+ & \textbf{Feedback} & \textbf{Core idea} & \textbf{Gains/losses} \\
+\midrule
+DPO & Preference pairs & Relative preference via $\log(\pi_\theta/\pi_{ref})$ & Linear, symmetric \\
+SimPO & Preference pairs & DPO without the reference model & Like DPO, cheaper \\
+KTO & Binary (good/bad) & Prospect-theory human utility & Nonlinear, loss-averse \\
+\bottomrule
+\end{tabular}
+\caption{Preference-optimization methods.}
+\label{tab:align}
+\end{table}
+
+\subsubsection{Reasoning Paradigms}
+How a \textit{frozen} model uses its knowledge at inference time (no parameter change), as opposed to learning paradigms that change the weights.
+
+\paragraph{Chain-of-Thought (CoT).} Prompt the model to generate explicit intermediate reasoning steps instead of answering directly. \textit{Intuition:} mimics human problem solving (decompose $\rightarrow$ reason step-by-step $\rightarrow$ combine), making the output transparent and letting external steps (e.g. retrieval) plug into the chain.
+\begin{itemize}
+    \item A \textit{hard-prompt} technique (e.g. ``Let's think step by step''), not training.
+    \item \textbf{Prerequisites:} only works on capable models, i.e. \textit{emergent} (scaled-up, good zero/few-shot) and \textit{instruction-tuned} (can follow the prompt).
+    \item Evaluated on reasoning benchmarks (math: GSM8K, MATH; logic: CLUTRR; code: CRUXEval).
+    \item \textit{Trend:} large-scale RL alone (no SFT) can elicit strong reasoning $\rightarrow$ ability to generalize $\approx$ ability to reason.
+\end{itemize}
+
+\paragraph{In-context Learning (Few-shot).} Put a few worked examples directly in the prompt; the model infers the pattern \textit{at inference}, with no weight updates. Combines naturally with CoT (few-shot reasoning exemplars).
+
+\paragraph{LLM Agents.} An (instruction-tuned) LLM that interacts with an environment, makes decisions, and takes actions to solve tasks. \textit{Intuition:} offload what the LLM is bad at (exact computation, fresh facts) to external tools and let it orchestrate. Components:
+\begin{itemize}
+    \item \textbf{Agent:} a general-purpose LLM, set up via a role prompt.
+    \item \textbf{Tools:} APIs, code interpreter, calculator, databases, an IR/MT system, even another agent.
+    \item \textbf{Memory:} \textit{short-term} (in-context, recent steps) and \textit{long-term} (external vector DB for retrieval).
+    \item \textbf{Planning:} decompose into subtasks via CoT or Tree-of-Thought (ToT); single-path vs multi-path.
+\end{itemize}
+
+\vspace{-0.3cm}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\linewidth]{img/PathPlanningReasoning.png}
+    \caption{Single-Path Planning vs. Mutli-Path Planning}
+    \label{fig:PathPlanningReasoning}
+\end{figure}
+
+\textit{Evaluation:} human scoring, task metrics, Turing test, agent benchmarks (ToolBench, AgentBench). The long-term-memory-as-retrieval component leads directly to \textbf{Agentic RAG}.
+
+\newpage
+\section{RAG Engineering}
+Engineering a deployable RAG system end to end, in four stages: \textbf{build} it (backend: data, retrieval, APIs), \textbf{expose} it (frontend: UX), \textbf{verify} it (testing), and \textbf{extend} it (frameworks and application patterns).
+
+\subsection{Backend Engineering}
+The engine of the system: \textit{database management} (how data is stored, retrieved, and ranked), the \textit{system/API design} that serves it, and \textit{deployment}.
+\subsubsection{Database Management}
+\textbf{Database:} a system for persistently storing data so it can be queried, updated, and controlled efficiently. Two requirements: \textit{structure} (easy to manipulate/extend) and \textit{efficiency} (fast, precise fetch).
+
+\paragraph{SQL.} Standard language for relational DBs. Core verbs: \texttt{SELECT} (which columns), \texttt{FROM} (which table), \texttt{WHERE} (which rows), \texttt{ORDER BY} (sort), \texttt{LIMIT} (how many). Document stores (e.g.\ MongoDB $=$ collections of JSON objects) expose Python interfaces (\texttt{pymongo}) for backend integration.
+
+\paragraph{Search strategy.}
+\begin{itemize}
+    \item \textbf{Keyword} (BM25): precise and fast, but \textit{low recall} (rigid, exact terms only).
+    \item \textbf{Semantic} (embeddings): captures meaning $\rightarrow$ high recall; the default RAG backbone.
+    \item \textbf{Hybrid:} BM25 \textit{pre-fetch} (fast over millions of docs) $+$ semantic \textit{re-rank} (precise), or run in parallel $\rightarrow$ high precision \textit{and} recall.
+\end{itemize}
+
+\vspace{-0.8cm}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\linewidth]{img/HybridSearch.png}
+    \label{fig:HybridSearch}
+\end{figure}
+
+\paragraph{Chunking.} The granularity at which documents are stored for retrieval, the \textit{most important step} of building the DB. \textit{Central tradeoff:} chunks too small lose context, too large fuse unrelated content and add noise. Finer granularity also means more chunks and more compute.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}l p{4cm} p{5.0cm} p{5cm}@{}}
+\toprule
+\textbf{Strategy} & \textbf{Main idea} & \textbf{Pros / Cons} & \textbf{When to apply} \\
+\midrule
+Fixed-size & Chunks of fixed token/char length & $+$ simple, fast, scalable \newline $-$ breaks semantic units, boundary errors & Baseline systems, small datasets, low-latency / cost-constrained \\
+\addlinespace
+Sliding-window & Fixed chunks overlapping by a stride & $+$ keeps cross-boundary context, more coherent \newline $-$ redundant (many overlapping chunks) & Sequential / conversational text where boundary context matters \\
+\addlinespace
+Hierarchical & Chunks across levels (section $\to$ paragraph $\to$ sentence) & $+$ strong grounding, explainable \newline $-$ complex, more storage, hierarchy can blow up & Long structured documents, high faithfulness, explainable RAG \\
+\addlinespace
+Semantic & Split where semantic change exceeds a threshold & $+$ topic-aware, adaptive sizes \newline $-$ embedding cost, threshold-sensitive & Heterogeneous documents, topic shifts, high-quality retrieval \\
+\bottomrule
+\end{tabular}
+\caption{Chunking strategies.}
+\label{tab:chunking}
+\end{table}
+
+\noindent\textit{Semantic chunking} concretely: embed and normalize sentences, compute adjacent distances $d_i = 1-\cos(v_i,v_{i+1})$, set threshold $T$ as the $p$-th percentile of $\{d_i\}$, then start a new chunk whenever $d_i \ge T$ (subject to a min/max chunk size, with $10$--$20\%$ overlap between chunks).
+
+\paragraph{Encoding.} Encoders have limited input length, another reason to chunk. Even with long-context encoders, chunk to (i) retrieve only relevant content (less noise) and (ii) cut token/traffic cost.
+
+\paragraph{Indexing.} Organize stored vectors so queries map to objects efficiently, e.g.\ approximate nearest-neighbor search.
+
+\paragraph{Re-ranking (two-stage retrieval).} Pre-fetch top-$K$ fast with the ANN index, then re-score that shortlist with a stronger model. \textit{Why not retrieve directly with the strong model:} too slow at scale, vector indexes optimize speed not fine-grained relevance, and re-ranking corrects ANN approximation $+$ embedding noise. Techniques: \textbf{cross-encoder} (joint query-doc encoding, highest accuracy), \textbf{LLM-as-a-Judge}, \textbf{bi-encoder} re-scoring (cheap), \textbf{heuristic} (metadata, recency, authority, length).
+
+\vspace{-0.3cm}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\linewidth]{img/ReRanking.png}
+    \label{fig:Re-ranking}
+\end{figure}
+
+\paragraph{Query Optimization.} User queries are short/ambiguous, and vector search depends entirely on the query embedding (garbage in $\rightarrow$ garbage out). Refine before encoding: \textit{expansion} (add concepts/synonyms), \textit{reformulation} (clarify intent/structure), \textit{metadata-aware} (inject filters/constraints).
+
+\paragraph{Prompt Design.} A good prompt has a clear task specification, structured input (helps attention), and a defined output format.
+
+\subsubsection{System Design \& APIs}
+
+\paragraph{RAG design principles.}
+\begin{itemize}
+    \item \textbf{Modular architecture:} independent, plug-and-play modules with stand-alone compute (APIs) and a unified data-exchange format. \textit{No API does more than one task.}
+    \item \textbf{High-quality retrieval:} combine semantic (embedding) and keyword (index) search, i.e.\ hybrid.
+    \item \textbf{Effective query formulation:} dynamic reformulation from user feedback; query normalization (misspellings, etc.).
+    \item \textbf{Scalability \& efficiency:} scale up/down to fit demand; minimize end-to-end latency.
+\end{itemize}
+
+\paragraph{APIs \& REST.} An \textbf{API} is a gateway letting programs communicate; the \textit{protocol} defines the rules for client (frontend) $\leftrightarrow$ server (backend) exchange. \textbf{REST} (REpresentational State Transfer) is an architectural style over HTTP/HTTPS (always HTTPS, i.e.\ HTTP $+$ TLS encryption). Methods: \texttt{GET} (retrieve; 200/404/400), \texttt{POST} (create), \texttt{PUT} (replace), \texttt{PATCH} (partial update), \texttt{DELETE} (remove).
+
+\begin{verbatim}
+from flask import Flask
+app = Flask(__name__)            # __name__ lets Flask locate files/config
+
+@app.route("/")                  # register an endpoint
+def hello_world():
+    return "<p>Hello, World!</p>"  # auto-wrapped into an HTTP response
+\end{verbatim}
+\noindent Run with \texttt{python api-server.py} (serves on port 5000); \texttt{--host=0.0.0.0} to listen on all public IPs; never \texttt{--debug} in production (allows browser-side code execution).
+
+\paragraph{API routing.} Test backend communication first (a \texttt{GET /} status check $+$ a \texttt{POST /echo}) before building complex routes. Name endpoints by \textit{resource $+$ action}, sharp and precise: good \texttt{/query}, \texttt{/retrieve}, \texttt{/rank}, \texttt{/generate}; bad \texttt{/qwen-7B}, \texttt{/my-ranker}, \texttt{/rag-project/backend/search/documents}. \textit{Why it matters:} keep modules one-task and let APIs communicate only when necessary (each call adds latency); follow minimalism (no redundant components) and never build on a fragile backend.
+
+\paragraph{GraphQL.} REST has two pain points at scale: \textit{many endpoints} to manage, and \textit{over-fetching} (a fixed endpoint returns more fields than needed). \textbf{GraphQL} is a query language where the client requests \textit{exactly} the data it needs from a \textit{single} endpoint:
+\begin{enumerate}
+    \item server defines a typed data \textit{schema};
+    \item client writes a query naming the desired fields;
+    \item server returns precisely those fields, nothing more.
+\end{enumerate}
+\textit{Tradeoff:} eliminates over-fetching and endpoint sprawl, but shifts complexity to the server (schema $+$ resolvers) and makes caching harder than REST's per-endpoint model.
+
+\subsubsection{Deployment}
+\paragraph{Local vs.\ cloud.}
+\begin{itemize}
+    \item \textbf{Local} (dev/testing, internal use): easy to debug/maintain and safer (data stays in-house); but limited compute for large models and no public access (few users).
+    \item \textbf{Cloud} (commercial/institutional): scalable compute and public reach; but costs money and is subject to \textbf{GDPR} / data-protection rules (apply in Switzerland too, especially for sensitive human data).
+\end{itemize}
+
+\paragraph{Docker.} \textit{Problem:} re-configuring inter-dependent, version-specific packages (plus CUDA driver mismatches) on every machine, the ``it-works-on-my-machine'' trap. \textbf{Docker} gives a consistent, portable runtime: the same behaviour across dev/test/prod, on any platform. Three concepts:
+\begin{itemize}
+    \item \textbf{Docker Engine:} runtime that runs containers on any system.
+    \item \textbf{Docker Image:} read-only template (application code $+$ environment).
+    \item \textbf{Docker Container:} a running instance of an image, self-sufficient (code, runtime, libraries, config).
+\end{itemize}
+Unlike a VM, containers \textit{share the host OS kernel} (no guest OS) $\rightarrow$ lighter, faster, denser (\textit{Pack-Build-Ship-Run}).
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+ & \textbf{Docker container} & \textbf{Virtual machine} \\
+\midrule
+Isolation & low & high \\
+Launch time & seconds & minutes \\
+Image size & several MB & hundreds of MB to GB \\
+Portability & platform-agnostic & platform-dependent \\
+Density (per machine) & 100--1000 & 10--100 \\
+\bottomrule
+\end{tabular}
+\caption{Docker containers vs.\ virtual machines.}
+\label{tab:docker-vm}
+\end{table}
+
+\subsection{Frontend Engineering}
+Turns the engine into a usable product: design principles, the React.js building blocks, and the HCI patterns RAG is actually deployed as.
+\subsubsection{Design Principles}
+Users judge the \textit{experience}, not the backbone. The frontend's job is \textbf{UX}, but a seamless UX needs frontend and backend working together (failure in either breaks it).
+\begin{itemize}
+    \item \textbf{UI} (``how it looks''): layout, colors, typography, components, spacing, micro-interactions (hover, focus, animation).
+    \item \textbf{UX} (``how it feels''): task flow, latency perception/feedback, error handling/recovery, trust and clarity.
+\end{itemize}
+\noindent Principles: know the building blocks (more than vibe coding); \textit{responsive} design (fit every screen); \textit{unified} styling; UX optimization (user research $\rightarrow$ prototyping $\rightarrow$ consistency $\rightarrow$ feedback/iteration); accessibility. \textit{RAG-specific:} surface loading/progress feedback (slow answers), warn on low-confidence output (hallucination), show citations (verifiability), and give recovery hints when retrieval fails.
+
+\paragraph{Core components.} A frontend codebase is three layers: \textbf{HTML} (skeleton, what exists), \textbf{CSS} (body, how it looks), \textbf{JavaScript} (CNS, how it acts). Frameworks like React.js do not replace them, they \textit{compose} them into reusable components.
+
+\subsubsection{React.JS}
+\textbf{Core idea:} UI is a \textit{function of state}; a state change triggers React to re-render automatically. React tracks changes via a \textit{virtual DOM} (HTML parsed into a tree, each component a node) and patches \textit{only the necessary} changes, not the whole page. This is \textit{declarative} (describe the UI per state) vs Vanilla JS's \textit{imperative} (manually select and mutate elements).
+
+\textbf{State} $=$ data that changes over time (user interactions, network responses, streaming updates). \textit{Not} state: constants, derived values, temporary variables, DOM elements.
+
+\paragraph{\texttt{useState}.} Adds a state variable: \texttt{const [state, setState] = useState(initial)}. \texttt{state} is the value for the current render, \texttt{setState} \textit{requests} an update (never reassign manually). Gotcha: calls are \textit{batched} against the current snapshot, so
+\begin{verbatim}
+setAge(age + 1); setAge(age + 1);        // both read age=28 -> 29 (not 30)
+setAge(a => a + 1); setAge(a => a + 1);  // updater queue -> 28->29->30
+\end{verbatim}
+Use the \textit{updater function} form when the next state depends on the previous one.
+
+\paragraph{\texttt{useContext}.} Passing state down through components that don't need it (\textit{prop drilling}) is painful because component structure $\neq$ data flow. Context shares a bundle: define it (\texttt{createContext}), a \texttt{Provider} wraps the top, and any descendant consumes only what it needs.
+\begin{verbatim}
+const { studentName } = useContext(UniversityContext);
+\end{verbatim}
+\textit{Caveat:} any change in the bundle re-renders \textit{all} consumers, so don't put frequently-changing values in one giant context.
+
+\paragraph{\texttt{useEffect}.} Synchronizes a component with an \textit{external system}: runs after render, re-runs when its dependencies change, with an optional cleanup. The natural place to talk to the RAG backend, e.g.\ re-retrieve whenever the query changes:
+\begin{verbatim}
+useEffect(() => {
+  if (!query) return;
+  fetch(`/retrieve?q=${query}`).then(r => r.json()).then(setDocuments);
+}, [query]);                  // [] = run once; [query] = re-run on change
+\end{verbatim}
+
+\subsubsection{Human-Computer Interaction}
+RAG is an economical route to grounded knowledge: no fine-tuning if the base model is good, plug-and-play with new models, customizable and scalable. Two common frontends:
+
+\paragraph{RAG as Chatbot.} Conversational interface where answers are generated from retrieved knowledge (NL input, turn-based, grounded in cited sources). Chatbots already handle open-ended and follow-up interaction; RAG adds factual grounding, up-to-date info (web search), domain knowledge, and reduced hallucination. The UI hides the complexity (chat history, current answer, optional sources) while each query secretly triggers a full RAG cycle (latency and uncertainty are real). \textit{Separate configuration} (model choice, decoding, prompt templates) \textit{from execution}.
+
+\paragraph{RAG as Data Visualizer.} A data-driven canvas where answers are structured, inspectable visualizations (tables, charts, dashboards) instead of text, hence much more frontend-heavy. The same RAG backend can power both, but the frontend architecture differs fundamentally.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+ & \textbf{RAG Chatbot} & \textbf{RAG Data Visualizer} \\
+\midrule
+Primary output & Natural-language text & Tables, charts, structured views \\
+Interaction & Conversational, turn-based & Exploratory, filter/control-driven \\
+Result persistence & Low (ephemeral) & High (inspectable) \\
+Trust mechanism & Citations alongside text & Structure, aggregation, provenance \\
+Cognitive load & Higher (recall context) & Lower (info externalized) \\
+\bottomrule
+\end{tabular}
+\caption{RAG chatbot vs.\ data visualizer.}
+\label{tab:rag-frontends}
+\end{table}
+
+\paragraph{Design for the full lifecycle.} Cover \textit{idle $\rightarrow$ retrieving $\rightarrow$ ranking $\rightarrow$ generating $\rightarrow$ done/error}, not just the final answer: show progress feedback, always support stop/retry/regenerate, and reduce cognitive load with structure (citations $+$ evidence cards; tables $+$ filters). A good RAG frontend helps users \textit{verify, steer, and recover}, not just read.
+
+\paragraph{Vibe Coding.} Coding agents let anyone prototype, but \textit{vibe first} (sketch, feel the flow), then \textit{stabilize after} (states, transitions, latencies). Use agents for scaffolding, mock data, UI exploration, refactoring, and docs, but you must still own the data flow, why/when each hook runs, failure-and-recovery, and where trust/evidence come from. \textit{Code agents write code; you are the architect.}
+
+\subsection{System Testing}
+With the system built and exposed, verify it. Every test answers one of two questions: \textit{validation} (does the software do what we want?) and \textit{defect} (does it do things correctly?). Commercial systems pass three stages: \textbf{development}, \textbf{release}, and \textbf{user} testing.
+
+\vspace{-0.5cm}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\linewidth]{img/SoftwareTesting.png}
+    \label{fig:SoftwareTesting}
+\end{figure}
+
+\subsubsection{Development Testing}
+Done by developers during development to find bugs.
+
+\paragraph{Test-Driven Development (TDD).} Build incrementally with a test per increment, and do not start the next increment until the current one passes. Cycle: map an increment to a code chunk (a frontend component, a backend endpoint) $\rightarrow$ write and run its test $\rightarrow$ pass: submit a PR and merge; fail: debug and re-implement $\rightarrow$ branch for the next increment. \textit{Why it matters:}
+\begin{itemize}
+    \item code$\rightarrow$function mapping enforces modularization (the foundation of debugging);
+    \item \textit{regression testing}: re-run old tests to catch bugs introduced by new increments (cheap);
+    \item more organized, structured documentation and test logs.
+\end{itemize}
+
+\vspace{-0.5cm}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.4\linewidth]{img/TDD.png}
+    \label{fig:TDD}
+\end{figure}
+
+\paragraph{Hierarchical levels.}
+\begin{itemize}
+    \item \textbf{Unit testing:} individual units (classes, functions), focus on \textit{functionality}. Design cases by \textit{input partitioning} (group inputs treated alike) and test on \textit{partition boundaries} (empty input, exact-size, over-size).
+    \item \textbf{Component testing:} a component of related units, focus on the \textit{interface} (parameter passing). Verify that information survives the journey between components (correct types, required fields present, parameters unchanged), not the internal functionality or output quality.
+    \item \textbf{System testing:} integrate components into a version and check compatibility, interaction, and data flow. Collaborative and run by an \textit{independent} team (developers are biased to their own happy path and ignore edge cases).
+\end{itemize}
+\textit{On-the-fly optimization:} don't wait for system-test results to optimize (too late). Start from the best available solution (SOTA models/frameworks) and trade off performance vs.\ latency, driven by cost not perfectionism.
+
+\noindent A minimal unit test (pytest-style), exercising a boundary partition:
+\begin{verbatim}
+def test_chunk_long_text():
+    chunker = DocumentChunker(max_tokens=3)
+    chunks = chunker.chunk("retrieval augmented generation systems require testing")
+    assert all(len(c.split()) <= 3 for c in chunks)   # size constraint respected
+\end{verbatim}
+
+\subsubsection{Release Testing}
+A separate team checks a complete version before production. System testing asks \textit{``does it work as specified?''}; release testing asks \textit{``is it good enough for the market?''}.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Aspect} & \textbf{System testing} & \textbf{Release testing} \\
+\midrule
+Goal & Correctness of integrated system & Readiness for release \\
+Perspective & Developer / engineer & User, customer, organization \\
+View & Product with known internals & Black box with a spec \\
+Environment & Controlled, internal & Production-like / staging \\
+Focus & Functional behavior & Fitness for use \\
+Failure tolerance & Low (must fix) & Some known issues accepted \\
+Outcome & Pass/fail vs.\ spec & Go / no-go decision \\
+\bottomrule
+\end{tabular}
+\caption{System testing vs.\ release testing.}
+\label{tab:sys-vs-release}
+\end{table}
+
+\noindent Three categories:
+\begin{itemize}
+    \item \textbf{Requirements-based:} verify functional/non-functional requirements that matter to users (answer with citations; abstain when no evidence; safety disclaimer for legal/medical; response under a threshold).
+    \item \textbf{Scenario:} end-to-end user interactions, including ambiguity, follow-ups, multi-hop, out-of-DB questions, and imperfect inputs.
+    \item \textbf{Performance:} latency (e.g.\ P95 $<$ 5\,s, P99 $<$ 8\,s), throughput/concurrency, per-query cost.
+\end{itemize}
+
+\subsubsection{User Testing}
+Users test in their own environment; \textbf{UX} is the focus (vs.\ release testing's functional readiness). Exploratory and observational, so no test cases are prepared in advance.
+
+\vspace{-0.5cm}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\linewidth]{img/UserTesting.png}
+    \label{fig:UserTesting}
+\end{figure}
+
+\begin{itemize}
+    \item \textbf{Alpha:} a selected user group works closely with the dev team on early releases.
+    \item \textbf{Beta:} a release goes to a larger group for UX feedback.
+    \item \textbf{Acceptance:} decide whether to deploy in the customer environment (define criteria $\rightarrow$ plan $\rightarrow$ run $\rightarrow$ negotiate $\rightarrow$ accept/reject).
+\end{itemize}
+\textit{Versioning} \texttt{major.minor.patch}: major $=$ breaking changes, minor $=$ non-breaking new components, patch $=$ small fixes.
+
+\subsubsection{Software Evolution}
+Good software has a long lifespan and keeps evolving.
+
+\vspace{-0.5cm}
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\linewidth]{img/SoftwareEvolution.png}
+    \label{fig:SoftwareEvolution}
+\end{figure}
+
+\paragraph{Evolution processes.} No standard process exists (maintenance needs and requirements shift), but generally accepted changes spawn a new version, each stage is tested, and new documentation ships with it. \textbf{Lehman's laws:} a system must evolve or become progressively less useful; complexity must be controlled or the system degrades; evolution is feedback-driven. \textit{Evolution} is the long-term trajectory (architectural drift, technical debt, design erosion); \textit{maintenance} is the individual changes.
+
+\paragraph{Software maintenance.} Three types:
+\begin{itemize}
+    \item \textbf{Fault repair} (bugs/vulnerabilities); coding errors $\ll$ design errors in cost.
+    \item \textbf{Environmental adaptation} (new platforms, hardware/OS changes).
+    \item \textbf{Functionality addition/modification} (business or organizational changes).
+\end{itemize}
+\textit{Challenges:} legacy code, loss of original developers, outdated docs, tight coupling / hidden dependencies. \textit{Tips:} test against multiple runtime versions, pin and document dependencies (\texttt{requirements.txt}), add regression tests for fixed bugs. Most effort happens \textit{after} the first release.
+
+\subsection{RAG Frameworks \& Applications}
+Beyond a hand-built pipeline, this \textit{extends} the system. A survey chapter: full systems built mostly by recombining earlier primitives (graphs, ViT $+$ contrastive learning, memory, agents).
+
+\subsubsection{Frameworks}
+\paragraph{LightRAG (Graph RAG).} Problem: treating documents as independent chunks \textit{flattens} entity relations and loses cross-text context, so the retriever grabs relevant chunks but cannot weave them into coherent multi-hop answers. Idea: represent text \textit{structurally}, not only semantically, as a knowledge graph $G(V,E)$ (nodes $=$ entities, edges $=$ relations; stored as adjacency matrix/list or hashmap). Built by:
+\begin{itemize}
+    \item chunk documents, then prompt an LLM to extract \textit{entities} (keys) and \textit{relations} (typed edges with descriptions);
+    \item attach descriptive \textit{values} to nodes (summaries / paraphrases / explanations, not raw text), \textbf{grounded}: no value unless supported by the chunk; one key may hold several values from different contexts; deduplicate keys.
+\end{itemize}
+\textbf{Dual-level retrieval:} \textit{low-level} keywords $k^{(l)}$ match specific entities, \textit{high-level} keywords $k^{(g)}$ match broad themes/relations. LightRAG retrieves keys and values (not chunks), gathers neighboring nodes, and an LLM integrates them into the answer.
+
+\paragraph{RAGFlow.} Open-source framework centered on \textit{deep document understanding}, hybrid retrieval, agentic workflows, and a visual/no-code interface. Pipeline: raw docs $\rightarrow$ ingestion $\rightarrow$ structured knowledge units $\rightarrow$ indexing (vector/BM25/hybrid). The \textit{ingestion service} does multi-format parsing (PDF, Word/PPT, HTML, Markdown), structural segmentation (layout preservation, table/diagram extraction, OCR), and LLM-assisted enrichment (clean noisy text, normalize terminology, summarize long inputs).
+
+\subsubsection{Application Patterns}
+\paragraph{Multimodal RAG.} Text-only retrieval is often insufficient (e.g.\ medical diagnosis); a visual modality disambiguates and supplies details missing from the text query. Needs two ingredients:
+\begin{itemize}
+    \item \textbf{Image encoder} (Vision Transformer): split the image into patches $\rightarrow$ linear projection $+$ position encoding $\rightarrow$ Transformer (optionally class-prefix tokens; pre-train $+$ fine-tune); ended CNN dominance in vision.
+    \item \textbf{Cross-modal matching:} contrastive InfoNCE over (text, image) pairs (the same objective as Week 3 dense retrieval), building a \textit{joint embedding space} that aligns text/image/audio/video.
+\end{itemize}
+System quality is bounded by how well cross-modal alignment is preserved; grounding generation in non-textual evidence reduces ambiguity and hallucination.
+
+\paragraph{Conversational RAG.} Chatbot $+$ RAG. Conversational queries are under-specified and context-dependent (``the previous answer'', ``that paper's method''), so the system needs persistent state beyond the current turn:
+\begin{itemize}
+    \item \textbf{Short-term memory:} recent turns (sliding window or running summarization).
+    \item \textbf{Long-term memory:} facts/preferences extracted from conversations, indexed like documents and retrieved only when relevant.
+\end{itemize}
+A \textit{router} decides whether a memory search is needed at all (saving token traffic and compute).
+
+\paragraph{Agentic RAG.} Simple RAG is a fixed pipeline (Query $\rightarrow$ Retrieve $\rightarrow$ Generate); agentic RAG adds \textit{decision-making, iteration, and control}. The agent decides whether retrieval is needed, what/where to retrieve, which tool to call, when to stop, and what to do next, i.e.\ it treats the task as a \textit{decision} task, not a \textit{lookup} task. Example (book a heavily-constrained flight): extract constraints into structured state $\rightarrow$ retrieve candidates $\rightarrow$ filter $\rightarrow$ verify $\rightarrow$ iterate $\rightarrow$ generate. It fixes simple-RAG failure modes: missing constraints, inability to iterate when constraints conflict, and weak multi-step verification.
 
 \end{document}
